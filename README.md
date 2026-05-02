@@ -36,6 +36,7 @@ make run
 | 命令 | 说明 |
 |------|------|
 | `make run` | 启动代理 + 自动打开 Chrome |
+| `make run-favorites` | 启动代理 + 启用收藏列表批量下载 |
 | `make run-no-browser` | 仅启动代理，手动配置浏览器 |
 | `make stop` | 停止代理 |
 | `make reset` | 重置去重过滤器 |
@@ -57,6 +58,7 @@ uv run python -m src.main [OPTIONS]
   --download-dir DIR    下载目录 (默认: downloads)
   --reset-filter        启动前重置 Bloom Filter
   --no-browser          不自动启动 Chrome
+  --download-favorites  启用从收藏列表 API 批量下载
 ```
 
 ## 首次使用说明
@@ -89,6 +91,8 @@ Makefile             # 常用命令快捷方式
 
 - **API 模式**: 拦截 `/aweme/v1/web/aweme/detail/` JSON 响应
 - **SSR 模式**: 解析 `https://www.douyin.com/user/self` 页面中的 `self.__pace_f` 数据块
+
+> **注意**: SSR 中的 `aweme_list` 仅在 URL 包含 `modal_id`（即点开某个视频）时才会处理，避免在喜欢标签页浏览时批量下载。如需从收藏列表批量下载，请使用 `--download-favorites` 参数。
 
 ### 点赞门控
 

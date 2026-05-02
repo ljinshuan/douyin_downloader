@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # URL patterns for video data
 AWEME_DETAIL_PATTERN = re.compile(r"/aweme/v1/web/aweme/detail/")
+FAVORITE_LIST_PATTERN = re.compile(r"/aweme/v1/web/aweme/favorite/")
 DOUYIN_SSR_PATTERN = re.compile(r"https://www\.douyin\.com/user/self")
 
 
@@ -24,10 +25,12 @@ class DouyinAddon:
         downloader: VideoDownloader,
         dedup: BloomDedup,
         catalog: JsonlCatalog,
+        download_favorites: bool = False,
     ):
         self.downloader = downloader
         self.dedup = dedup
         self.catalog = catalog
+        self.download_favorites = download_favorites
 
     def response(self, flow: http.HTTPFlow) -> None:
         url = flow.request.pretty_url
@@ -40,6 +43,12 @@ class DouyinAddon:
         if AWEME_DETAIL_PATTERN.search(url) and "json" in content_type:
             logger.info("Matched aweme detail API: %s", url[:120])
             self._handle_api_response(flow)
+            return
+
+        # Favorite list API (only when --download-favorites is enabled)
+        if self.download_favorites and FAVORITE_LIST_PATTERN.search(url) and "json" in content_type:
+            logger.info("Matched favorite list API: %s", url[:120])
+            self._handle_favorite_list_response(flow)
             return
 
         # SSR page with embedded video data
@@ -64,6 +73,21 @@ class DouyinAddon:
         except Exception as e:
             logger.error("API response parse error: %s", e)
 
+    def _handle_favorite_list_response(self, flow: http.HTTPFlow) -> None:
+        """Handle /aweme/v1/web/aweme/favorite/ - liked video list."""
+        try:
+            body = flow.response.get_text(strict=False)
+            if not body:
+                return
+            data = json.loads(body)
+            aweme_list = data.get("aweme_list")
+            if not aweme_list:
+                return
+            for item in aweme_list:
+                self._process_aweme_item(item)
+        except Exception as e:
+            logger.error("Favorite list response parse error: %s", e)
+
     def _handle_ssr_page(self, flow: http.HTTPFlow) -> None:
         """Handle SSR page with embedded videoDetail in __pace_f or <script> tags."""
         try:
@@ -75,6 +99,9 @@ class DouyinAddon:
             if "play_addr" not in body and "playAddr" not in body:
                 return
 
+            # Only process aweme_list when viewing a specific video (modal_id in URL)
+            allow_aweme_list = "modal_id" in flow.request.pretty_url
+
             # Pattern 1: self.__pace_f chunks (URL-encoded JSON)
             pace_f_matches = re.findall(
                 r'self\.__pace_f\.push\(\[\d+,"(.*?)"\]\)', body, re.DOTALL
@@ -82,7 +109,7 @@ class DouyinAddon:
             for chunk_text in pace_f_matches:
                 try:
                     decoded = urllib.parse.unquote(chunk_text)
-                    result = self._extract_from_decoded_text(decoded)
+                    result = self._extract_from_decoded_text(decoded, allow_aweme_list)
                     if result:
                         return
                 except Exception:
@@ -95,7 +122,7 @@ class DouyinAddon:
             for script_text in script_matches:
                 try:
                     decoded = urllib.parse.unquote(script_text)
-                    result = self._extract_from_decoded_text(decoded)
+                    result = self._extract_from_decoded_text(decoded, allow_aweme_list)
                     if result:
                         return
                 except Exception:
@@ -104,16 +131,16 @@ class DouyinAddon:
         except Exception as e:
             logger.error("SSR page parse error: %s", e)
 
-    def _extract_from_decoded_text(self, text: str) -> bool:
+    def _extract_from_decoded_text(self, text: str, allow_aweme_list: bool = True) -> bool:
         """Extract video details from decoded SSR text. Returns True if found."""
-        # Try videoDetail block (camelCase from SSR)
+        # Try videoDetail block (camelCase from SSR) — always allowed
         detail = self._extract_video_detail_from_text(text)
         if detail:
             self._process_aweme_item(detail)
             return True
 
-        # Try aweme_list block (snake_case from API-like SSR data)
-        if "aweme_list" in text:
+        # Try aweme_list block (snake_case from API-like SSR data) — gated by modal_id
+        if allow_aweme_list and "aweme_list" in text:
             idx = text.find('"aweme_list"')
             if idx != -1:
                 start = text.index("[", idx)
