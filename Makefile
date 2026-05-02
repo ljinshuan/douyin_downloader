@@ -6,6 +6,9 @@ DOWNLOAD_DIR ?= downloads
 run:
 	uv run python -m src.main --port $(PORT)
 
+run-favorites:
+	uv run python -m src.main --port $(PORT) --download-favorites
+
 run-no-browser:
 	uv run python -m src.main --port $(PORT) --no-browser
 

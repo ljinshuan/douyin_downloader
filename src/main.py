@@ -85,10 +85,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not auto-launch Chrome",
     )
+    parser.add_argument(
+        "--download-favorites",
+        action="store_true",
+        help="Enable downloading from favorite/liked list API",
+    )
     return parser.parse_args()
 
 
-async def run_proxy(port: int, download_dir: str, reset_filter: bool, no_browser: bool) -> None:
+async def run_proxy(port: int, download_dir: str, reset_filter: bool, no_browser: bool, download_favorites: bool = False) -> None:
     dl_dir = Path(download_dir)
     dl_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,7 +106,7 @@ async def run_proxy(port: int, download_dir: str, reset_filter: bool, no_browser
     catalog = JsonlCatalog(dl_dir / "videos.jsonl")
     downloader = VideoDownloader(dl_dir)
 
-    addon = DouyinAddon(downloader, dedup, catalog)
+    addon = DouyinAddon(downloader, dedup, catalog, download_favorites=download_favorites)
 
     opts = Options(listen_host="127.0.0.1", listen_port=port)
     master = DumpMaster(opts)
@@ -140,7 +145,7 @@ async def run_proxy(port: int, download_dir: str, reset_filter: bool, no_browser
 
 def main() -> None:
     args = parse_args()
-    asyncio.run(run_proxy(args.port, args.download_dir, args.reset_filter, args.no_browser))
+    asyncio.run(run_proxy(args.port, args.download_dir, args.reset_filter, args.no_browser, args.download_favorites))
 
 
 if __name__ == "__main__":
